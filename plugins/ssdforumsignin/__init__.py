@@ -419,10 +419,12 @@ class SSDForumSignin(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'cron',
                                             'label': '签到周期'
+                                            'placeholder': '30 8 * * *',
+                                            'hint': '五位cron表达式，每天早上8:30执行'
                                         }
                                     }
                                 ]
