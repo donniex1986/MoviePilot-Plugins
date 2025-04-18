@@ -19,7 +19,7 @@ from app.schemas import Notification, NotificationType, MessageChannel
 
 class SSDForumSignin(_PluginBase):
     # 插件名称
-    plugin_name = "SSDForum签到"
+    plugin_name = "SSD签到"
     # 插件描述
     plugin_desc = "SSDForum自动签到，支持随机延迟。"
     # 插件图标
@@ -27,7 +27,7 @@ class SSDForumSignin(_PluginBase):
     # 插件版本
     plugin_version = "1.3"
     # 插件作者
-    plugin_author = "imaliang"
+    plugin_author = "mark"
     # 作者主页
     author_url = "https://github.com/imaliang"
     # 插件配置项ID前缀
