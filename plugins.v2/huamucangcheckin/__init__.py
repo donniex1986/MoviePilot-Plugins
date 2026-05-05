@@ -1,4 +1,5 @@
 import re
+import json
 import requests
 
 from datetime import datetime
@@ -28,10 +29,10 @@ class HuamucangCheckIn(_PluginBase):
     plugin_icon = "https://share.huamucang.top/favicon.ico"
 
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
 
     # 插件作者
-    plugin_author = "ChatGPT"
+    plugin_author = "Donniex"
 
     # 作者主页
     author_url = "https://share.huamucang.top"
@@ -113,7 +114,7 @@ class HuamucangCheckIn(_PluginBase):
         if not self._cookie:
             msg = "聚影签到失败：未配置 Cookie"
             logger.warning(msg)
-            self.__notify("聚影签到", msg)
+            self.__notify("聚影签到失败", msg)
             return
 
         logger.info("开始执行聚影签到")
@@ -124,10 +125,15 @@ class HuamucangCheckIn(_PluginBase):
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
-                      "image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                "image/avif,image/webp,image/apng,*/*;q=0.8,"
+                "application/json,text/plain,*/*"
+            ),
             "Accept-Language": "zh-CN,zh;q=0.9",
             "Referer": self._base_url + "/",
+            "Origin": self._base_url,
+            "X-Requested-With": "XMLHttpRequest",
             "Cookie": self._cookie
         }
 
@@ -141,12 +147,17 @@ class HuamucangCheckIn(_PluginBase):
                 allow_redirects=True
             )
 
+            # 修复中文乱码
+            self.__fix_response_encoding(response)
+
             status_code = response.status_code
             text = response.text or ""
 
             logger.info(f"聚影签到请求完成，状态码：{status_code}")
 
-            result_msg = self.__parse_result(status_code, text, response.url)
+            result_msg = self.__parse_json_result(response)
+            if not result_msg:
+                result_msg = self.__parse_result(status_code, text, response.url)
 
             logger.info(result_msg)
             self.__notify("聚影签到", result_msg)
@@ -159,6 +170,103 @@ class HuamucangCheckIn(_PluginBase):
             msg = f"聚影签到发生未知异常：{e}"
             logger.error(msg)
             self.__notify("聚影签到失败", msg)
+
+    @staticmethod
+    def __fix_response_encoding(response):
+        """
+        修复 requests 对中文页面的错误编码判断
+        """
+        try:
+            apparent_encoding = response.apparent_encoding
+
+            if apparent_encoding:
+                response.encoding = apparent_encoding
+
+            if not response.encoding:
+                response.encoding = "utf-8"
+
+            if response.encoding.lower() in ["iso-8859-1", "latin-1", "ascii"]:
+                response.encoding = "utf-8"
+
+        except Exception:
+            response.encoding = "utf-8"
+
+    def __parse_json_result(self, response) -> str:
+        """
+        解析 JSON 签到结果
+        """
+        try:
+            content_type = response.headers.get("Content-Type", "")
+            text = response.text or ""
+            raw_text = text.strip()
+
+            if not raw_text:
+                return ""
+
+            is_json = False
+
+            if "application/json" in content_type.lower():
+                is_json = True
+
+            if raw_text.startswith("{") or raw_text.startswith("["):
+                is_json = True
+
+            if not is_json:
+                return ""
+
+            try:
+                data = response.json()
+            except Exception:
+                data = json.loads(raw_text)
+
+            if isinstance(data, list):
+                return f"聚影签到返回：{data}"
+
+            if not isinstance(data, dict):
+                return f"聚影签到返回：{data}"
+
+            code = data.get("code")
+            status = data.get("status")
+            msg = (
+                data.get("msg")
+                or data.get("message")
+                or data.get("error")
+                or data.get("detail")
+                or ""
+            )
+            data_value = data.get("data")
+
+            result_text = msg or str(data_value) or str(data)
+
+            success_codes = [0, 1, 200, "0", "1", "200", True, "success", "ok"]
+
+            if code in success_codes or status in success_codes:
+                return f"聚影签到成功：{result_text}"
+
+            if any(keyword in str(result_text) for keyword in [
+                "成功",
+                "已签到",
+                "今日已签到",
+                "今天已签到",
+                "签到过",
+                "already",
+                "success"
+            ]):
+                return f"聚影签到完成：{result_text}"
+
+            if any(keyword in str(result_text).lower() for keyword in [
+                "login",
+                "unauthorized",
+                "forbidden",
+                "csrf",
+                "token"
+            ]):
+                return f"聚影签到失败：{result_text}"
+
+            return f"聚影签到返回：{result_text}"
+
+        except Exception:
+            return ""
 
     def __parse_result(self, status_code: int, text: str, final_url: str) -> str:
         """
@@ -173,53 +281,66 @@ class HuamucangCheckIn(_PluginBase):
         if status_code >= 400:
             return f"聚影签到失败：请求异常，状态码 {status_code}"
 
-        # 如果被重定向到登录页，通常说明 Cookie 失效
-        if "login" in final_url.lower() or "signin" in final_url.lower():
+        final_url_lower = final_url.lower()
+
+        if any(x in final_url_lower for x in [
+            "login",
+            "signin",
+            "auth"
+        ]):
             return f"聚影签到失败：可能未登录或 Cookie 已失效，当前地址：{final_url}"
 
-        lower_text = text.lower()
+        clean_text = self.__clean_text(text)
+        lower_text = clean_text.lower()
 
-        # 常见成功关键字
         success_keywords = [
             "签到成功",
             "打卡成功",
-            "checkin success",
-            "success",
-            "已签到",
+            "领取成功",
+            "获得",
+            "积分",
+            "经验",
+            "金币",
             "今日已签到",
+            "今天已签到",
+            "已经签到",
+            "已签到",
+            "签到过",
+            "success",
+            "checkin success",
+            "checked",
             "already checked",
-            "already check",
+            "already"
         ]
 
-        # 常见失败或登录失效关键字
         fail_keywords = [
             "请先登录",
             "未登录",
-            "登录",
+            "登录后",
+            "用户登录",
             "login",
             "unauthorized",
             "forbidden",
             "csrf",
             "token",
+            "失败",
+            "error"
         ]
 
         for keyword in success_keywords:
             if keyword.lower() in lower_text:
-                clean_text = self.__clean_text(text)
-                if clean_text:
-                    return f"聚影签到完成：{clean_text[:300]}"
-                return "聚影签到完成"
+                return f"聚影签到完成：{clean_text[:300]}" if clean_text else "聚影签到完成"
 
         for keyword in fail_keywords:
             if keyword.lower() in lower_text:
-                clean_text = self.__clean_text(text)
-                if clean_text:
-                    return f"聚影签到可能失败：{clean_text[:300]}"
-                return "聚影签到可能失败：页面提示需要登录或权限不足"
+                return f"聚影签到可能失败：{clean_text[:300]}" if clean_text else "聚影签到可能失败：页面提示需要登录或权限不足"
 
-        # 没有明确提示时，只要 200 就认为请求成功，但提醒用户确认
+        # 当前你日志里的情况基本会进入这里：
+        # 状态码 200，返回正常首页标题，但没有明确签到结果。
+        if "聚影" in clean_text and "网盘资源收集者" in clean_text:
+            return "聚影签到请求成功，但页面未返回明确签到结果。请到网站个人中心确认是否签到成功。"
+
         if status_code == 200:
-            clean_text = self.__clean_text(text)
             if clean_text:
                 return f"聚影签到请求成功，但未识别明确结果：{clean_text[:300]}"
             return "聚影签到请求成功，但页面无明确返回内容"
@@ -236,7 +357,14 @@ class HuamucangCheckIn(_PluginBase):
 
         text = re.sub(r"<script[\s\S]*?</script>", "", html, flags=re.I)
         text = re.sub(r"<style[\s\S]*?</style>", "", text, flags=re.I)
+        text = re.sub(r"<!--[\s\S]*?-->", "", text)
         text = re.sub(r"<[^>]+>", " ", text)
+        text = text.replace("&nbsp;", " ")
+        text = text.replace("&amp;", "&")
+        text = text.replace("&lt;", "<")
+        text = text.replace("&gt;", ">")
+        text = text.replace("&quot;", "\"")
+        text = text.replace("&#39;", "'")
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
@@ -276,6 +404,9 @@ class HuamucangCheckIn(_PluginBase):
         })
 
     def get_state(self) -> bool:
+        """
+        插件状态
+        """
         return self._enabled
 
     def get_service(self) -> List[Dict[str, Any]]:
