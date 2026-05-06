@@ -30,7 +30,7 @@ class HuamucangCheckIn(_PluginBase):
     plugin_icon = "https://share.huamucang.top/favicon.ico"
 
     # 插件版本
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
 
     # 插件作者
     plugin_author = "Donniex"
@@ -152,12 +152,15 @@ class HuamucangCheckIn(_PluginBase):
             if csrf_token:
                 headers["X-CSRFToken"] = csrf_token
         elif self._username and self._password:
-            if not self.__login(session, headers):
+            login_success, login_token = self.__login(session, headers)
+            if not login_success:
                 msg = "聚影签到失败：用户名/密码登录失败，请检查配置"
                 logger.warning(msg)
                 self.__save_checkin_history(msg)
                 self.__notify("聚影签到失败", msg)
                 return
+            if login_token:
+                headers["X-App-User-Token"] = login_token
 
         try:
             response = session.post(
@@ -406,9 +409,9 @@ class HuamucangCheckIn(_PluginBase):
             cookies[name.strip()] = value.strip()
         return cookies
 
-    def __login(self, session: requests.Session, headers: Dict[str, str]) -> bool:
+    def __login(self, session: requests.Session, headers: Dict[str, str]) -> Tuple[bool, str]:
         """
-        使用用户名/密码登录聚影站点，获取有效登录 Cookie
+        使用用户名/密码登录聚影站点，获取有效登录令牌或 Cookie
         """
         headers = headers.copy()
         headers["Referer"] = self._base_url + "/"
@@ -418,56 +421,70 @@ class HuamucangCheckIn(_PluginBase):
         except requests.exceptions.RequestException:
             pass
 
+        try:
+            session.get(
+                self._base_url.rstrip("/") + "/api/csrf/",
+                headers=headers,
+                timeout=20,
+                allow_redirects=True
+            )
+        except requests.exceptions.RequestException:
+            pass
+
         csrf_token = session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
         if csrf_token:
             headers["X-CSRFToken"] = csrf_token
 
         login_paths = [
-            "/api/auth/login/",
-            "/api/user/login/",
-            "/auth/login/",
-            "/accounts/login/",
-            "/login/"
+            "/api/app/login/"
         ]
 
-        login_data_variants = [
-            {"username": self._username, "password": self._password},
-            {"email": self._username, "password": self._password},
-            {"account": self._username, "password": self._password}
-        ]
+        login_data = {
+            "username": self._username,
+            "password": self._password
+        }
 
         for login_path in login_paths:
             login_url = self._base_url.rstrip("/") + login_path
-            for login_data in login_data_variants:
-                for use_json in (False, True):
-                    try:
-                        request_headers = headers.copy()
-                        if use_json:
-                            request_headers["Content-Type"] = "application/json"
-                            response = session.post(
-                                login_url,
-                                headers=request_headers,
-                                json=login_data,
-                                timeout=20,
-                                allow_redirects=True
-                            )
-                        else:
-                            response = session.post(
-                                login_url,
-                                headers=request_headers,
-                                data=login_data,
-                                timeout=20,
-                                allow_redirects=True
-                            )
+            try:
+                request_headers = headers.copy()
+                request_headers["Content-Type"] = "application/json"
+                response = session.post(
+                    login_url,
+                    headers=request_headers,
+                    json=login_data,
+                    timeout=20,
+                    allow_redirects=True
+                )
 
-                        self.__fix_response_encoding(response)
+                self.__fix_response_encoding(response)
+                token = self.__extract_login_token(response)
+                if self.__login_success(response, session):
+                    if token:
+                        logger.info(f"聚影登录成功，登录地址：{login_url}，已获取 X-App-User-Token")
+                        return True, token
+                    logger.info(f"聚影登录成功，登录地址：{login_url}")
+                    return True, ""
+            except requests.exceptions.RequestException:
+                continue
 
-                        if self.__login_success(response, session):
-                            logger.info(f"聚影登录成功，登录地址：{login_url}")
-                            return True
-                    except requests.exceptions.RequestException:
-                        continue
-        return False
+        return False, ""
+
+    @staticmethod
+    def __extract_login_token(response: requests.Response) -> str:
+        try:
+            data = response.json()
+            if isinstance(data, dict):
+                token = data.get("token")
+                if not token and isinstance(data.get("data"), dict):
+                    token = data["data"].get("token")
+                if token:
+                    return str(token)
+        except Exception:
+            pass
+
+        token = response.headers.get("x-refreshed-token") or response.headers.get("X-App-User-Token")
+        return token if isinstance(token, str) else ""
 
     @staticmethod
     def __login_success(response: requests.Response, session: requests.Session) -> bool:
