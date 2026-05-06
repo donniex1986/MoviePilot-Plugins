@@ -27,10 +27,10 @@ class HuamucangCheckIn(_PluginBase):
     plugin_desc = "用于聚影网站每日签到，支持用户名/密码自动登录"
 
     # 插件图标
-    plugin_icon = "https://share.huamucang.top/favicon.ico"
+    plugin_icon = "https://share.huamucang.top/static/vue/favicon.svg"
 
     # 插件版本
-    plugin_version = "1.0.7"
+    plugin_version = "1.0.9"
 
     # 插件作者
     plugin_author = "Donniex"
