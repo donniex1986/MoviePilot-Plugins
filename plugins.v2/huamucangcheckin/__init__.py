@@ -30,7 +30,7 @@ class HuamucangCheckIn(_PluginBase):
     plugin_icon = "https://share.huamucang.top/favicon.ico"
 
     # 插件版本
-    plugin_version = "1.0.5"
+    plugin_version = "1.0.6"
 
     # 插件作者
     plugin_author = "Donniex"
@@ -193,6 +193,40 @@ class HuamucangCheckIn(_PluginBase):
             logger.info(f"聚影签到请求完成，状态码：{status_code}")
             logger.info(f"响应头: {dict(response.headers)}")
             logger.info(f"响应内容: {text[:500]}...")
+
+            # 如果401未登录且配置了用户名密码，尝试登录重试
+            if status_code == 401 and self._username and self._password:
+                logger.info("检测到401未登录，尝试用户名密码登录重试")
+                login_success, login_token = self.__login(session, headers.copy())
+                if login_success:
+                    if login_token:
+                        headers["X-App-User-Token"] = login_token
+                        logger.info(f"重试时设置X-App-User-Token: {login_token[:20]}...")
+                    
+                    # 更新CSRF令牌
+                    csrf_token = session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
+                    if csrf_token:
+                        headers["X-CSRFToken"] = csrf_token
+                        logger.info(f"重试时更新X-CSRFToken: {csrf_token[:20]}...")
+                    
+                    logger.info("重新发送签到请求")
+                    try:
+                        response = session.post(
+                            self._checkin_url,
+                            headers=headers,
+                            timeout=20,
+                            allow_redirects=True
+                        )
+                        self.__fix_response_encoding(response)
+                        status_code = response.status_code
+                        text = response.text or ""
+                        logger.info(f"重试聚影签到请求完成，状态码：{status_code}")
+                        logger.info(f"重试响应头: {dict(response.headers)}")
+                        logger.info(f"重试响应内容: {text[:500]}...")
+                    except requests.exceptions.RequestException as e:
+                        logger.warning(f"重试签到请求异常: {e}")
+                else:
+                    logger.warning("用户名密码登录失败，无法重试")
 
             result_msg = self.__parse_json_result(response)
             if not result_msg:
