@@ -24,13 +24,13 @@ class HuamucangCheckIn(_PluginBase):
     plugin_name = "聚影签到"
 
     # 插件描述
-    plugin_desc = "用于聚影网站每日签到"
+    plugin_desc = "用于聚影网站每日签到，支持用户名/密码自动登录"
 
     # 插件图标
     plugin_icon = "https://share.huamucang.top/favicon.ico"
 
     # 插件版本
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
 
     # 插件作者
     plugin_author = "Donniex"
@@ -53,6 +53,8 @@ class HuamucangCheckIn(_PluginBase):
     _onlyonce = False
     _cron = "0 8 * * *"
     _cookie = ""
+    _username = ""
+    _password = ""
     _user_agent = ""
     _checkin_history: List[Dict[str, Any]] = []
 
@@ -80,6 +82,8 @@ class HuamucangCheckIn(_PluginBase):
             self._onlyonce = config.get("onlyonce", False)
             self._cron = config.get("cron", "0 8 * * *")
             self._cookie = config.get("cookie", "")
+            self._username = config.get("username", "")
+            self._password = config.get("password", "")
             self._user_agent = config.get("user_agent", "")
             self._checkin_history = config.get("checkin_history", []) or []
 
@@ -119,8 +123,8 @@ class HuamucangCheckIn(_PluginBase):
         """
         执行签到
         """
-        if not self._cookie:
-            msg = "聚影签到失败：未配置 Cookie"
+        if not self._cookie and (not self._username or not self._password):
+            msg = "聚影签到失败：未配置 Cookie 或用户名/密码"
             logger.warning(msg)
             self.__notify("聚影签到失败", msg)
             return
@@ -137,8 +141,7 @@ class HuamucangCheckIn(_PluginBase):
             "Accept-Language": "zh-CN,zh;q=0.9",
             "Referer": self._base_url + "/checkin",
             "Origin": self._base_url,
-            "X-Requested-With": "XMLHttpRequest",
-            "Cookie": self._cookie
+            "X-Requested-With": "XMLHttpRequest"
         }
 
         session = requests.Session()
@@ -148,6 +151,13 @@ class HuamucangCheckIn(_PluginBase):
             csrf_token = cookie_dict.get("csrftoken") or cookie_dict.get("csrfToken")
             if csrf_token:
                 headers["X-CSRFToken"] = csrf_token
+        elif self._username and self._password:
+            if not self.__login(session, headers):
+                msg = "聚影签到失败：用户名/密码登录失败，请检查配置"
+                logger.warning(msg)
+                self.__save_checkin_history(msg)
+                self.__notify("聚影签到失败", msg)
+                return
 
         try:
             response = session.post(
@@ -396,6 +406,98 @@ class HuamucangCheckIn(_PluginBase):
             cookies[name.strip()] = value.strip()
         return cookies
 
+    def __login(self, session: requests.Session, headers: Dict[str, str]) -> bool:
+        """
+        使用用户名/密码登录聚影站点，获取有效登录 Cookie
+        """
+        headers = headers.copy()
+        headers["Referer"] = self._base_url + "/"
+
+        try:
+            session.get(self._base_url, headers=headers, timeout=20)
+        except requests.exceptions.RequestException:
+            pass
+
+        csrf_token = session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
+        if csrf_token:
+            headers["X-CSRFToken"] = csrf_token
+
+        login_paths = [
+            "/api/auth/login/",
+            "/api/user/login/",
+            "/auth/login/",
+            "/accounts/login/",
+            "/login/"
+        ]
+
+        login_data_variants = [
+            {"username": self._username, "password": self._password},
+            {"email": self._username, "password": self._password},
+            {"account": self._username, "password": self._password}
+        ]
+
+        for login_path in login_paths:
+            login_url = self._base_url.rstrip("/") + login_path
+            for login_data in login_data_variants:
+                for use_json in (False, True):
+                    try:
+                        request_headers = headers.copy()
+                        if use_json:
+                            request_headers["Content-Type"] = "application/json"
+                            response = session.post(
+                                login_url,
+                                headers=request_headers,
+                                json=login_data,
+                                timeout=20,
+                                allow_redirects=True
+                            )
+                        else:
+                            response = session.post(
+                                login_url,
+                                headers=request_headers,
+                                data=login_data,
+                                timeout=20,
+                                allow_redirects=True
+                            )
+
+                        self.__fix_response_encoding(response)
+
+                        if self.__login_success(response, session):
+                            logger.info(f"聚影登录成功，登录地址：{login_url}")
+                            return True
+                    except requests.exceptions.RequestException:
+                        continue
+        return False
+
+    @staticmethod
+    def __login_success(response: requests.Response, session: requests.Session) -> bool:
+        if response.status_code in (200, 302):
+            cookies = session.cookies.get_dict()
+            if cookies and any(name.lower() in [
+                "sessionid", "auth_token", "token", "jwt", "sess", "userid"
+            ] for name in cookies):
+                return True
+
+            try:
+                data = response.json()
+                if isinstance(data, dict):
+                    code = data.get("code")
+                    status = data.get("status")
+                    if code in [0, 1, 200, "0", "1", "200", True, "success", "ok"]:
+                        return True
+                    if status in [0, 1, 200, "0", "1", "200", "success", "ok"]:
+                        return True
+            except Exception:
+                pass
+
+            text = (response.text or "").lower()
+            if any(keyword in text for keyword in ["登录成功", "welcome", "success"]):
+                return True
+            if any(keyword in text for keyword in ["用户名或密码错误", "invalid", "error", "fail", "failed"]):
+                return False
+
+        return False
+
     def __save_checkin_history(self, result_msg: str):
         """
         保存每天的签到记录
@@ -453,6 +555,8 @@ class HuamucangCheckIn(_PluginBase):
             "onlyonce": self._onlyonce,
             "cron": self._cron,
             "cookie": self._cookie,
+            "username": self._username,
+            "password": self._password,
             "user_agent": self._user_agent,
             "checkin_history": self._checkin_history
         })
@@ -593,6 +697,46 @@ class HuamucangCheckIn(_PluginBase):
                             {
                                 "component": "VCol",
                                 "props": {
+                                    "cols": 12,
+                                    "md": 6
+                                },
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "username",
+                                            "label": "用户名",
+                                            "placeholder": "请输入 share.huamucang.top 登录用户名"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {
+                                    "cols": 12,
+                                    "md": 6
+                                },
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "password",
+                                            "label": "密码",
+                                            "type": "password",
+                                            "placeholder": "请输入 share.huamucang.top 登录密码"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {
                                     "cols": 12
                                 },
                                 "content": [
@@ -600,8 +744,8 @@ class HuamucangCheckIn(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "cookie",
-                                            "label": "Cookie",
-                                            "placeholder": "请填写登录 share.huamucang.top 后浏览器中的 Cookie",
+                                            "label": "Cookie (备用)",
+                                            "placeholder": "可选，已登录 Cookie 作为备用登录方式",
                                             "rows": 5
                                         }
                                     }
@@ -635,7 +779,7 @@ class HuamucangCheckIn(_PluginBase):
                         "props": {
                             "type": "info",
                             "variant": "tonal",
-                            "text": "使用前请先在浏览器登录 https://share.huamucang.top，然后复制 Cookie 到插件配置中。签到地址为 https://share.huamucang.top/checkin。"
+                            "text": "推荐填写用户名和密码进行登录；也可填写已登录 Cookie 作为备用。签到地址为 https://share.huamucang.top/checkin。"
                         }
                     }
                 ]
@@ -646,6 +790,8 @@ class HuamucangCheckIn(_PluginBase):
             "onlyonce": False,
             "cron": "0 8 * * *",
             "cookie": "",
+            "username": "",
+            "password": "",
             "user_agent": ""
         }
 
@@ -678,7 +824,7 @@ class HuamucangCheckIn(_PluginBase):
                     },
                     {
                         "component": "VCardText",
-                        "text": "用于 share.huamucang.top 聚影网站每日自动签到。请在插件配置中填写登录后的 Cookie。"
+                        "text": "用于 share.huamucang.top 聚影网站每日自动签到。请在插件配置中填写用户名和密码，或备用 Cookie。"
                     },
                     {
                         "component": "VCardTitle",
