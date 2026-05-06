@@ -1,6 +1,7 @@
 import re
 import json
 import requests
+import os
 
 from datetime import datetime
 from typing import Any, List, Dict, Tuple
@@ -53,10 +54,11 @@ class HuamucangCheckIn(_PluginBase):
     _cron = "0 8 * * *"
     _cookie = ""
     _user_agent = ""
+    _checkin_history: List[Dict[str, Any]] = []
 
     # 站点地址
     _base_url = "https://share.huamucang.top"
-    _checkin_url = "https://share.huamucang.top/checkin"
+    _checkin_url = "https://share.huamucang.top/api/app/checkin/do/"
 
     # 调度器
     _scheduler = None
@@ -65,6 +67,11 @@ class HuamucangCheckIn(_PluginBase):
         """
         插件初始化
         """
+        # 设置编码环境变量以避免乱码
+        os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+        os.environ.setdefault('LANG', 'C.UTF-8')
+        os.environ.setdefault('LC_ALL', 'C.UTF-8')
+
         self.stop_service()
 
         if config:
@@ -74,6 +81,7 @@ class HuamucangCheckIn(_PluginBase):
             self._cron = config.get("cron", "0 8 * * *")
             self._cookie = config.get("cookie", "")
             self._user_agent = config.get("user_agent", "")
+            self._checkin_history = config.get("checkin_history", []) or []
 
         if not self._enabled:
             logger.info("聚影签到插件未启用")
@@ -140,7 +148,7 @@ class HuamucangCheckIn(_PluginBase):
         session = requests.Session()
 
         try:
-            response = session.get(
+            response = session.post(
                 self._checkin_url,
                 headers=headers,
                 timeout=20,
@@ -160,15 +168,18 @@ class HuamucangCheckIn(_PluginBase):
                 result_msg = self.__parse_result(status_code, text, response.url)
 
             logger.info(result_msg)
+            self.__save_checkin_history(result_msg)
             self.__notify("聚影签到", result_msg)
 
         except requests.exceptions.RequestException as e:
             msg = f"聚影签到请求异常：{e}"
             logger.error(msg)
+            self.__save_checkin_history(msg)
             self.__notify("聚影签到失败", msg)
         except Exception as e:
             msg = f"聚影签到发生未知异常：{e}"
             logger.error(msg)
+            self.__save_checkin_history(msg)
             self.__notify("聚影签到失败", msg)
 
     @staticmethod
@@ -368,6 +379,31 @@ class HuamucangCheckIn(_PluginBase):
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
+    def __save_checkin_history(self, result_msg: str):
+        """
+        保存每天的签到记录
+        """
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            now_time = datetime.now().strftime("%H:%M:%S")
+            if not isinstance(self._checkin_history, list):
+                self._checkin_history = []
+
+            if self._checkin_history and self._checkin_history[-1].get("date") == today:
+                self._checkin_history[-1]["result"] = result_msg
+                self._checkin_history[-1]["time"] = now_time
+            else:
+                self._checkin_history.append({
+                    "date": today,
+                    "time": now_time,
+                    "result": result_msg
+                })
+
+            self._checkin_history = self._checkin_history[-30:]
+            self.__update_config()
+        except Exception:
+            pass
+
     def __notify(self, title: str, text: str):
         """
         发送通知
@@ -400,7 +436,8 @@ class HuamucangCheckIn(_PluginBase):
             "onlyonce": self._onlyonce,
             "cron": self._cron,
             "cookie": self._cookie,
-            "user_agent": self._user_agent
+            "user_agent": self._user_agent,
+            "checkin_history": self._checkin_history
         })
 
     def get_state(self) -> bool:
@@ -594,6 +631,18 @@ class HuamucangCheckIn(_PluginBase):
         """
         插件详情页
         """
+        history_lines = []
+        if isinstance(self._checkin_history, list) and self._checkin_history:
+            for item in reversed(self._checkin_history[-7:]):
+                date = item.get("date", "")
+                time = item.get("time", "")
+                result = item.get("result", "")
+                history_lines.append(f"{date} {time}: {result}")
+
+        history_text = "暂无签到记录。"
+        if history_lines:
+            history_text = "\n".join(history_lines)
+
         return [
             {
                 "component": "VCard",
@@ -608,6 +657,14 @@ class HuamucangCheckIn(_PluginBase):
                     {
                         "component": "VCardText",
                         "text": "用于 share.huamucang.top 聚影网站每日自动签到。请在插件配置中填写登录后的 Cookie。"
+                    },
+                    {
+                        "component": "VCardTitle",
+                        "text": "最近签到记录"
+                    },
+                    {
+                        "component": "VCardText",
+                        "text": history_text
                     }
                 ]
             }

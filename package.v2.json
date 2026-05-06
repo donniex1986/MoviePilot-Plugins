@@ -3,11 +3,12 @@
     "name": "聚影签到",
     "description": "用于聚影网站每日签到",
     "labels": "签到,网站",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "icon": "https://share.huamucang.top/favicon.ico",
     "author": "Donniex",
     "level": 1,
     "history": {
+      "v1.0.1": "修复编码问题，支持中文显示",
       "v1.0.0": "聚影签到插件"
     }
   }
