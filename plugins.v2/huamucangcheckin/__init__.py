@@ -30,7 +30,7 @@ class HuamucangCheckIn(_PluginBase):
     plugin_icon = "https://share.huamucang.top/favicon.ico"
 
     # 插件版本
-    plugin_version = "1.0.3"
+    plugin_version = "1.0.4"
 
     # 插件作者
     plugin_author = "Donniex"
@@ -151,7 +151,8 @@ class HuamucangCheckIn(_PluginBase):
             csrf_token = cookie_dict.get("csrftoken") or cookie_dict.get("csrfToken")
             if csrf_token:
                 headers["X-CSRFToken"] = csrf_token
-        elif self._username and self._password:
+
+        if not cookie_dict and self._username and self._password:
             login_success, login_token = self.__login(session, headers)
             if not login_success:
                 msg = "聚影签到失败：用户名/密码登录失败，请检查配置"
@@ -161,6 +162,10 @@ class HuamucangCheckIn(_PluginBase):
                 return
             if login_token:
                 headers["X-App-User-Token"] = login_token
+
+        csrf_token = session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
+        if csrf_token:
+            headers["X-CSRFToken"] = csrf_token
 
         try:
             response = session.post(
@@ -436,37 +441,54 @@ class HuamucangCheckIn(_PluginBase):
             headers["X-CSRFToken"] = csrf_token
 
         login_paths = [
-            "/api/app/login/"
+            "/api/app/login/",
+            "/api/auth/login/",
+            "/api/user/login/",
+            "/auth/login/",
+            "/accounts/login/",
+            "/login/"
         ]
 
-        login_data = {
-            "username": self._username,
-            "password": self._password
-        }
+        login_data_variants = [
+            {"username": self._username, "password": self._password},
+            {"email": self._username, "password": self._password},
+            {"account": self._username, "password": self._password}
+        ]
 
         for login_path in login_paths:
             login_url = self._base_url.rstrip("/") + login_path
-            try:
-                request_headers = headers.copy()
-                request_headers["Content-Type"] = "application/json"
-                response = session.post(
-                    login_url,
-                    headers=request_headers,
-                    json=login_data,
-                    timeout=20,
-                    allow_redirects=True
-                )
+            for login_data in login_data_variants:
+                for use_json in (False, True):
+                    try:
+                        request_headers = headers.copy()
+                        if use_json:
+                            request_headers["Content-Type"] = "application/json"
+                            response = session.post(
+                                login_url,
+                                headers=request_headers,
+                                json=login_data,
+                                timeout=20,
+                                allow_redirects=True
+                            )
+                        else:
+                            response = session.post(
+                                login_url,
+                                headers=request_headers,
+                                data=login_data,
+                                timeout=20,
+                                allow_redirects=True
+                            )
 
-                self.__fix_response_encoding(response)
-                token = self.__extract_login_token(response)
-                if self.__login_success(response, session):
-                    if token:
-                        logger.info(f"聚影登录成功，登录地址：{login_url}，已获取 X-App-User-Token")
-                        return True, token
-                    logger.info(f"聚影登录成功，登录地址：{login_url}")
-                    return True, ""
-            except requests.exceptions.RequestException:
-                continue
+                        self.__fix_response_encoding(response)
+                        token = self.__extract_login_token(response)
+                        if self.__login_success(response, session):
+                            if token:
+                                logger.info(f"聚影登录成功，登录地址：{login_url}，已获取 X-App-User-Token")
+                                return True, token
+                            logger.info(f"聚影登录成功，登录地址：{login_url}")
+                            return True, ""
+                    except requests.exceptions.RequestException:
+                        continue
 
         return False, ""
 
