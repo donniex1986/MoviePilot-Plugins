@@ -3,11 +3,12 @@
     "name": "聚影签到",
     "description": "用于聚影网站每日签到，支持用户名/密码自动登录",
     "labels": "签到,网站",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "icon": "https://share.huamucang.top/favicon.ico",
     "author": "Donniex",
     "level": 1,
     "history": {
+      "v1.0.5": "添加详细调试日志，帮助诊断登录和签到问题",
       "v1.0.4": "修复401未登录问题，优化CSRF令牌处理和登录兼容性",
       "v1.0.3": "优化登录流程，支持 X-App-User-Token，并修复用户名/密码登录判断",
       "v1.0.2": "新增用户名/密码登录支持，Cookie 作为备用登录方式",

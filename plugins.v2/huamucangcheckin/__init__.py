@@ -30,7 +30,7 @@ class HuamucangCheckIn(_PluginBase):
     plugin_icon = "https://share.huamucang.top/favicon.ico"
 
     # 插件版本
-    plugin_version = "1.0.4"
+    plugin_version = "1.0.5"
 
     # 插件作者
     plugin_author = "Donniex"
@@ -151,8 +151,10 @@ class HuamucangCheckIn(_PluginBase):
             csrf_token = cookie_dict.get("csrftoken") or cookie_dict.get("csrfToken")
             if csrf_token:
                 headers["X-CSRFToken"] = csrf_token
+            logger.info("使用Cookie登录模式")
 
         if not cookie_dict and self._username and self._password:
+            logger.info("使用用户名密码登录模式")
             login_success, login_token = self.__login(session, headers)
             if not login_success:
                 msg = "聚影签到失败：用户名/密码登录失败，请检查配置"
@@ -162,12 +164,19 @@ class HuamucangCheckIn(_PluginBase):
                 return
             if login_token:
                 headers["X-App-User-Token"] = login_token
+                logger.info(f"已设置X-App-User-Token: {login_token[:20]}...")
 
         csrf_token = session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
         if csrf_token:
             headers["X-CSRFToken"] = csrf_token
+            logger.info(f"已设置X-CSRFToken: {csrf_token[:20]}...")
+
+        logger.info(f"当前会话Cookie: {list(session.cookies.keys())}")
+        logger.info(f"请求头包含认证信息: X-App-User-Token={bool(headers.get('X-App-User-Token'))}, X-CSRFToken={bool(headers.get('X-CSRFToken'))}")
 
         try:
+            logger.info(f"开始发送签到请求到: {self._checkin_url}")
+            logger.info(f"请求头: {headers}")
             response = session.post(
                 self._checkin_url,
                 headers=headers,
@@ -182,12 +191,14 @@ class HuamucangCheckIn(_PluginBase):
             text = response.text or ""
 
             logger.info(f"聚影签到请求完成，状态码：{status_code}")
+            logger.info(f"响应头: {dict(response.headers)}")
+            logger.info(f"响应内容: {text[:500]}...")
 
             result_msg = self.__parse_json_result(response)
             if not result_msg:
                 result_msg = self.__parse_result(status_code, text, response.url)
 
-            logger.info(result_msg)
+            logger.info(f"解析结果: {result_msg}")
             self.__save_checkin_history(result_msg)
             self.__notify("聚影签到", result_msg)
 
@@ -231,6 +242,9 @@ class HuamucangCheckIn(_PluginBase):
             text = response.text or ""
             raw_text = text.strip()
 
+            logger.info(f"解析签到结果，Content-Type: {content_type}")
+            logger.info(f"签到响应文本: {raw_text[:500]}...")
+
             if not raw_text:
                 return ""
 
@@ -243,11 +257,14 @@ class HuamucangCheckIn(_PluginBase):
                 is_json = True
 
             if not is_json:
+                logger.info("响应不是JSON格式")
                 return ""
 
             try:
                 data = response.json()
-            except Exception:
+                logger.info(f"解析后的JSON数据: {data}")
+            except Exception as e:
+                logger.warning(f"JSON解析失败: {e}")
                 data = json.loads(raw_text)
 
             if isinstance(data, list):
@@ -266,6 +283,8 @@ class HuamucangCheckIn(_PluginBase):
                 or ""
             )
             data_value = data.get("data")
+
+            logger.info(f"签到结果解析: code={code}, status={status}, msg={msg}")
 
             result_text = msg or str(data_value) or str(data)
 
@@ -296,7 +315,8 @@ class HuamucangCheckIn(_PluginBase):
 
             return f"聚影签到返回：{result_text}"
 
-        except Exception:
+        except Exception as e:
+            logger.error(f"解析签到结果异常: {e}")
             return ""
 
     def __parse_result(self, status_code: int, text: str, final_url: str) -> str:
@@ -418,11 +438,13 @@ class HuamucangCheckIn(_PluginBase):
         """
         使用用户名/密码登录聚影站点，获取有效登录令牌或 Cookie
         """
+        logger.info("开始执行登录流程")
         headers = headers.copy()
         headers["Referer"] = self._base_url + "/"
 
         try:
             session.get(self._base_url, headers=headers, timeout=20)
+            logger.info("已访问主页获取初始Cookie")
         except requests.exceptions.RequestException:
             pass
 
@@ -433,12 +455,14 @@ class HuamucangCheckIn(_PluginBase):
                 timeout=20,
                 allow_redirects=True
             )
+            logger.info("已访问CSRF接口")
         except requests.exceptions.RequestException:
             pass
 
         csrf_token = session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
         if csrf_token:
             headers["X-CSRFToken"] = csrf_token
+            logger.info(f"登录前CSRF令牌: {csrf_token[:20]}...")
 
         login_paths = [
             "/api/app/login/",
@@ -457,6 +481,7 @@ class HuamucangCheckIn(_PluginBase):
 
         for login_path in login_paths:
             login_url = self._base_url.rstrip("/") + login_path
+            logger.info(f"尝试登录路径: {login_path}")
             for login_data in login_data_variants:
                 for use_json in (False, True):
                     try:
@@ -470,6 +495,7 @@ class HuamucangCheckIn(_PluginBase):
                                 timeout=20,
                                 allow_redirects=True
                             )
+                            logger.info(f"使用JSON格式尝试登录: {login_url}")
                         else:
                             response = session.post(
                                 login_url,
@@ -478,8 +504,12 @@ class HuamucangCheckIn(_PluginBase):
                                 timeout=20,
                                 allow_redirects=True
                             )
+                            logger.info(f"使用Form格式尝试登录: {login_url}")
 
                         self.__fix_response_encoding(response)
+                        logger.info(f"登录响应状态码: {response.status_code}")
+                        logger.info(f"登录响应内容: {response.text[:200]}...")
+
                         token = self.__extract_login_token(response)
                         if self.__login_success(response, session):
                             if token:
@@ -487,9 +517,11 @@ class HuamucangCheckIn(_PluginBase):
                                 return True, token
                             logger.info(f"聚影登录成功，登录地址：{login_url}")
                             return True, ""
-                    except requests.exceptions.RequestException:
+                    except requests.exceptions.RequestException as e:
+                        logger.warning(f"登录请求异常: {e}")
                         continue
 
+        logger.error("所有登录尝试均失败")
         return False, ""
 
     @staticmethod
@@ -510,31 +542,42 @@ class HuamucangCheckIn(_PluginBase):
 
     @staticmethod
     def __login_success(response: requests.Response, session: requests.Session) -> bool:
+        logger.info(f"检查登录是否成功，状态码: {response.status_code}")
         if response.status_code in (200, 302):
             cookies = session.cookies.get_dict()
+            logger.info(f"当前会话Cookie: {list(cookies.keys())}")
             if cookies and any(name.lower() in [
                 "sessionid", "auth_token", "token", "jwt", "sess", "userid"
             ] for name in cookies):
+                logger.info("通过Cookie检查登录成功")
                 return True
 
             try:
                 data = response.json()
+                logger.info(f"登录响应JSON: {data}")
                 if isinstance(data, dict):
                     code = data.get("code")
                     status = data.get("status")
+                    logger.info(f"登录响应code: {code}, status: {status}")
                     if code in [0, 1, 200, "0", "1", "200", True, "success", "ok"]:
+                        logger.info("通过code检查登录成功")
                         return True
                     if status in [0, 1, 200, "0", "1", "200", "success", "ok"]:
+                        logger.info("通过status检查登录成功")
                         return True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"解析登录响应JSON失败: {e}")
 
             text = (response.text or "").lower()
+            logger.info(f"登录响应文本: {text[:200]}...")
             if any(keyword in text for keyword in ["登录成功", "welcome", "success"]):
+                logger.info("通过文本关键字检查登录成功")
                 return True
             if any(keyword in text for keyword in ["用户名或密码错误", "invalid", "error", "fail", "failed"]):
+                logger.info("通过文本关键字检查登录失败")
                 return False
 
+        logger.info("登录检查未通过任何条件")
         return False
 
     def __save_checkin_history(self, result_msg: str):
