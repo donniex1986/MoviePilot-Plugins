@@ -24,7 +24,7 @@ class HuamucangCheckIn(_PluginBase):
     plugin_name = "聚影签到"
 
     # 插件描述
-    plugin_desc = "用于 share.huamucang.top 聚影网站每日签到"
+    plugin_desc = "用于聚影网站每日签到"
 
     # 插件图标
     plugin_icon = "https://share.huamucang.top/favicon.ico"
@@ -133,19 +133,21 @@ class HuamucangCheckIn(_PluginBase):
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
-            "Accept": (
-                "text/html,application/xhtml+xml,application/xml;q=0.9,"
-                "image/avif,image/webp,image/apng,*/*;q=0.8,"
-                "application/json,text/plain,*/*"
-            ),
+            "Accept": "application/json,text/plain,*/*",
             "Accept-Language": "zh-CN,zh;q=0.9",
-            "Referer": self._base_url + "/",
+            "Referer": self._base_url + "/checkin",
             "Origin": self._base_url,
             "X-Requested-With": "XMLHttpRequest",
             "Cookie": self._cookie
         }
 
         session = requests.Session()
+        cookie_dict = self.__parse_cookie_string(self._cookie)
+        if cookie_dict:
+            session.cookies.update(cookie_dict)
+            csrf_token = cookie_dict.get("csrftoken") or cookie_dict.get("csrfToken")
+            if csrf_token:
+                headers["X-CSRFToken"] = csrf_token
 
         try:
             response = session.post(
@@ -379,6 +381,21 @@ class HuamucangCheckIn(_PluginBase):
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
+    @staticmethod
+    def __parse_cookie_string(cookie_str: str) -> Dict[str, str]:
+        if not cookie_str:
+            return {}
+
+        cookies = {}
+        for part in cookie_str.split(";"):
+            if not part:
+                continue
+            if "=" not in part:
+                continue
+            name, value = part.split("=", 1)
+            cookies[name.strip()] = value.strip()
+        return cookies
+
     def __save_checkin_history(self, result_msg: str):
         """
         保存每天的签到记录
@@ -451,10 +468,15 @@ class HuamucangCheckIn(_PluginBase):
         服务信息
         """
         if self._enabled and self._cron:
+            try:
+                trigger = CronTrigger.from_crontab(self._cron)
+            except Exception:
+                trigger = self._cron
+
             return [{
                 "id": "HuamucangCheckIn",
                 "name": "聚影自动签到",
-                "trigger": self._cron,
+                "trigger": trigger,
                 "func": self.checkin,
                 "kwargs": {}
             }]
