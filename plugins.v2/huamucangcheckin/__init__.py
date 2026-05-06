@@ -30,7 +30,7 @@ class HuamucangCheckIn(_PluginBase):
     plugin_icon = "https://share.huamucang.top/favicon.ico"
 
     # 插件版本
-    plugin_version = "1.0.6"
+    plugin_version = "1.0.7"
 
     # 插件作者
     plugin_author = "Donniex"
@@ -166,7 +166,7 @@ class HuamucangCheckIn(_PluginBase):
                 headers["X-App-User-Token"] = login_token
                 logger.info(f"已设置X-App-User-Token: {login_token[:20]}...")
 
-        csrf_token = session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
+        csrf_token = self.__get_csrf_token(session)
         if csrf_token:
             headers["X-CSRFToken"] = csrf_token
             logger.info(f"已设置X-CSRFToken: {csrf_token[:20]}...")
@@ -204,7 +204,7 @@ class HuamucangCheckIn(_PluginBase):
                         logger.info(f"重试时设置X-App-User-Token: {login_token[:20]}...")
                     
                     # 更新CSRF令牌
-                    csrf_token = session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
+                    csrf_token = self.__get_csrf_token(session)
                     if csrf_token:
                         headers["X-CSRFToken"] = csrf_token
                         logger.info(f"重试时更新X-CSRFToken: {csrf_token[:20]}...")
@@ -468,6 +468,23 @@ class HuamucangCheckIn(_PluginBase):
             cookies[name.strip()] = value.strip()
         return cookies
 
+    @staticmethod
+    def __get_csrf_token(session: requests.Session) -> str:
+        """
+        安全获取CSRF令牌，避免多个同名cookie的异常
+        """
+        try:
+            return session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
+        except Exception:
+            # 如果有多个同名cookie，尝试从cookie jar中获取最新的
+            try:
+                for cookie in session.cookies:
+                    if cookie.name.lower() in ["csrftoken", "csrftoken"]:
+                        return cookie.value
+            except Exception:
+                pass
+            return None
+
     def __login(self, session: requests.Session, headers: Dict[str, str]) -> Tuple[bool, str]:
         """
         使用用户名/密码登录聚影站点，获取有效登录令牌或 Cookie
@@ -493,7 +510,7 @@ class HuamucangCheckIn(_PluginBase):
         except requests.exceptions.RequestException:
             pass
 
-        csrf_token = session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
+        csrf_token = self.__get_csrf_token(session)
         if csrf_token:
             headers["X-CSRFToken"] = csrf_token
             logger.info(f"登录前CSRF令牌: {csrf_token[:20]}...")
