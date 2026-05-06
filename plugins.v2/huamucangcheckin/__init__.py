@@ -30,7 +30,7 @@ class HuamucangCheckIn(_PluginBase):
     plugin_icon = "https://share.huamucang.top/static/vue/favicon.svg"
 
     # 插件版本
-    plugin_version = "1.0.9"
+    plugin_version = "1.0.10"
 
     # 插件作者
     plugin_author = "Donniex"
@@ -932,19 +932,20 @@ class HuamucangCheckIn(_PluginBase):
         """
         插件详情页
         """
-        history_lines = []
+        records = []
         if isinstance(self._checkin_history, list) and self._checkin_history:
             for item in reversed(self._checkin_history[-7:]):
-                date = item.get("date", "")
-                time = item.get("time", "")
-                result = item.get("result", "")
-                history_lines.append(f"{date} {time}: {result}")
+                records.append({
+                    "date": item.get("date", ""),
+                    "time": item.get("time", ""),
+                    "result": item.get("result", "")
+                })
 
-        history_text = "暂无签到记录。"
-        if history_lines:
-            history_text = "\n".join(history_lines)
+        summary_text = "用于 share.huamucang.top 聚影网站每日自动签到。请在插件配置中填写用户名和密码，或备用 Cookie。"
+        if not records:
+            summary_text = "暂无签到记录。启用插件并执行签到后，历史数据将在这里显示。"
 
-        return [
+        page = [
             {
                 "component": "VCard",
                 "props": {
@@ -953,23 +954,105 @@ class HuamucangCheckIn(_PluginBase):
                 "content": [
                     {
                         "component": "VCardTitle",
-                        "text": "聚影签到"
+                        "text": "聚影签到数据面板"
                     },
                     {
                         "component": "VCardText",
-                        "text": "用于 share.huamucang.top 聚影网站每日自动签到。请在插件配置中填写用户名和密码，或备用 Cookie。"
+                        "text": summary_text
                     },
                     {
-                        "component": "VCardTitle",
-                        "text": "最近签到记录"
-                    },
-                    {
-                        "component": "VCardText",
-                        "text": history_text
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VCardTitle",
+                                        "text": "历史记录"
+                                    },
+                                    {
+                                        "component": "VCardText",
+                                        "text": f"最近 {len(records)} 条签到记录"
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 8},
+                                "content": [
+                                    {
+                                        "component": "VCardTitle",
+                                        "text": "最新结果"
+                                    },
+                                    {
+                                        "component": "VCardText",
+                                        "text": records[0]["result"] if records else "暂时没有结果数据。"
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
         ]
+
+        if records:
+            page.append({
+                "component": "VCard",
+                "props": {
+                    "variant": "outlined"
+                },
+                "content": [
+                    {
+                        "component": "VCardTitle",
+                        "text": "签到历史"
+                    },
+                    *[
+                        {
+                            "component": "VCard",
+                            "props": {
+                                "variant": "tonal",
+                                "class": "mb-3"
+                            },
+                            "content": [
+                                {
+                                    "component": "VRow",
+                                    "content": [
+                                        {
+                                            "component": "VCol",
+                                            "props": {"cols": 4},
+                                            "content": [
+                                                {
+                                                    "component": "VCardTitle",
+                                                    "text": record["date"]
+                                                },
+                                                {
+                                                    "component": "VCardText",
+                                                    "text": record["time"]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "component": "VCol",
+                                            "props": {"cols": 8},
+                                            "content": [
+                                                {
+                                                    "component": "VCardText",
+                                                    "text": record["result"]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                        for record in records
+                    ]
+                ]
+            })
+
+        return page
 
     def stop_service(self):
         """
