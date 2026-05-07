@@ -131,6 +131,11 @@ class HuamucangCheckIn(_PluginBase):
 
         logger.info("开始执行聚影签到")
 
+        if self.__already_signed_in_today():
+            msg = "今日已签到，跳过重复签到"
+            logger.info(msg)
+            return
+
         headers = {
             "User-Agent": self._user_agent or (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -484,6 +489,53 @@ class HuamucangCheckIn(_PluginBase):
             except Exception:
                 pass
             return None
+
+    def __already_signed_in_today(self) -> bool:
+        """
+        检查当天是否已执行成功签到，避免重复请求
+        """
+        if not isinstance(self._checkin_history, list) or not self._checkin_history:
+            return False
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        last_entry = self._checkin_history[-1]
+        if last_entry.get("date") != today:
+            return False
+
+        result = (last_entry.get("result") or "").lower()
+        if not result:
+            return False
+
+        success_keywords = [
+            "签到成功",
+            "已签到",
+            "签到完成",
+            "今日已签到",
+            "今天已签到",
+            "already",
+            "success"
+        ]
+        return any(keyword in result for keyword in success_keywords)
+
+    def __format_latest_result(self, text: str) -> str:
+        """
+        清理最新结果显示，去掉重复前缀信息
+        """
+        if not text:
+            return text
+
+        prefixes = [
+            "聚影签到完成：",
+            "聚影签到失败：",
+            "聚影签到返回：",
+            "聚影签到可能失败：",
+            "聚影签到请求成功："
+        ]
+        for prefix in prefixes:
+            if text.startswith(prefix):
+                return text[len(prefix):].strip()
+
+        return text
 
     def __login(self, session: requests.Session, headers: Dict[str, str]) -> Tuple[bool, str]:
         """
@@ -941,9 +993,11 @@ class HuamucangCheckIn(_PluginBase):
                     "result": item.get("result", "")
                 })
 
-        summary_text = "用于 share.huamucang.top 聚影网站每日自动签到。请在插件配置中填写用户名和密码，或备用 Cookie。"
+        summary_text = "用于聚影网站每日自动签到，请在插件配置中填写用户名和密码或备用 Cookie。"
         if not records:
             summary_text = "暂无签到记录。启用插件并执行签到后，历史数据将在这里显示。"
+
+        latest_text = self.__format_latest_result(records[0]["result"]) if records else "暂时没有结果数据。"
 
         page = [
             {
@@ -987,7 +1041,7 @@ class HuamucangCheckIn(_PluginBase):
                                     },
                                     {
                                         "component": "VCardText",
-                                        "text": records[0]["result"] if records else "暂时没有结果数据。"
+                                        "text": latest_text
                                     }
                                 ]
                             }
