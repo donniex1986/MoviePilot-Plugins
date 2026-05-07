@@ -1,13 +1,14 @@
 {
   "HuamucangCheckIn": {
     "name": "聚影签到",
-    "description": "用于聚影网站每日签到，支持用户名/密码自动登录",
+    "description": "用于 share.huamucang.top 聚影网站每日自动签到，请在插件配置中填写用户名和密码或备用 Cookie。",
     "labels": "签到,网站",
-    "version": "1.0.11",
+    "version": "1.0.12",
     "icon": "https://raw.githubusercontent.com/donniex1986/MoviePilot-Plugins/main/plugins.v2/huamucangcheckin/icons/taosync-2.png",
     "author": "Donniex",
     "level": 1,
     "history": {
+      "v1.0.12": "优化页面显示，去掉最新结果前缀并同步插件描述与版本信息",
       "v1.0.11": "将插件图标改为 icons 目录中的 taosync-2.png",
       "v1.0.10": "新增插件数据查看页面，用卡片方式展示签到历史",
       "v1.0.9": "使用聚影官方 favicon.svg 作为插件图标链接",

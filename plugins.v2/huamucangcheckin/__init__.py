@@ -30,7 +30,7 @@ class HuamucangCheckIn(_PluginBase):
     plugin_icon = "https://raw.githubusercontent.com/donniex1986/MoviePilot-Plugins/main/plugins.v2/huamucangcheckin/icons/taosync-2.png"
 
     # 插件版本
-    plugin_version = "1.0.11"
+    plugin_version = "1.0.12"
 
     # 插件作者
     plugin_author = "Donniex"
