@@ -24,13 +24,13 @@ class HuamucangCheckIn(_PluginBase):
     plugin_name = "聚影签到"
 
     # 插件描述
-    plugin_desc = "用于聚影网站每日签到，支持用户名/密码自动登录"
+    plugin_desc = "用于 share.huamucang.top 聚影网站每日自动签到，请在插件配置中填写用户名和密码或备用 Cookie。"
 
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/donniex1986/MoviePilot-Plugins/main/plugins.v2/huamucangcheckin/icons/taosync-2.png"
 
     # 插件版本
-    plugin_version = "1.0.12"
+    plugin_version = "1.0.13"
 
     # 插件作者
     plugin_author = "Donniex"
