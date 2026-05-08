@@ -2,16 +2,15 @@ import re
 import json
 import requests
 import os
+import threading
 
 from datetime import datetime
 from typing import Any, List, Dict, Tuple
 
-from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.plugins import _PluginBase
 from app.log import logger
-from app.core.config import settings
 
 try:
     from app.schemas.types import NotificationType
@@ -24,13 +23,13 @@ class HuamucangCheckIn(_PluginBase):
     plugin_name = "聚影签到"
 
     # 插件描述
-    plugin_desc = "用于 share.huamucang.top 聚影网站每日自动签到，请在插件配置中填写用户名和密码或备用 Cookie。"
+    plugin_desc = "用于聚影网站每日自动签到，请在插件配置中填写用户名和密码或备用 Cookie。"
 
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/donniex1986/MoviePilot-Plugins/main/plugins.v2/huamucangcheckin/icons/taosync-2.png"
 
     # 插件版本
-    plugin_version = "1.0.13"
+    plugin_version = "1.0.14"
 
     # 插件作者
     plugin_author = "Donniex"
@@ -62,17 +61,20 @@ class HuamucangCheckIn(_PluginBase):
     _base_url = "https://share.huamucang.top"
     _checkin_url = "https://share.huamucang.top/api/app/checkin/do/"
 
-    # 调度器
+    # 不再使用插件内部 BackgroundScheduler，统一交给 MoviePilot get_service 调度
     _scheduler = None
+
+    # 签到执行锁，防止定时、API、手动命令等入口同时触发
+    _checkin_lock = threading.Lock()
 
     def init_plugin(self, config: dict = None):
         """
         插件初始化
         """
         # 设置编码环境变量以避免乱码
-        os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
-        os.environ.setdefault('LANG', 'C.UTF-8')
-        os.environ.setdefault('LC_ALL', 'C.UTF-8')
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+        os.environ.setdefault("LANG", "C.UTF-8")
+        os.environ.setdefault("LC_ALL", "C.UTF-8")
 
         self.stop_service()
 
@@ -91,37 +93,41 @@ class HuamucangCheckIn(_PluginBase):
             logger.info("聚影签到插件未启用")
             return
 
-        self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+        logger.info(f"聚影签到插件已启用，Cron：{self._cron}")
 
+        # 立即运行一次
+        # 注意：这里不再使用 BackgroundScheduler，避免和 get_service 重复调度
         if self._onlyonce:
             logger.info("聚影签到插件配置为立即运行一次")
-            self._scheduler.add_job(
-                func=self.checkin,
-                trigger="date",
-                run_date=datetime.now(),
-                name="聚影签到立即运行"
-            )
+
+            try:
+                threading.Thread(
+                    target=self.checkin,
+                    name="HuamucangCheckInOnlyOnce",
+                    daemon=True
+                ).start()
+            except Exception as e:
+                logger.error(f"聚影签到立即运行启动失败：{e}")
 
             self._onlyonce = False
             self.__update_config()
 
-        if self._cron:
-            try:
-                self._scheduler.add_job(
-                    func=self.checkin,
-                    trigger=CronTrigger.from_crontab(self._cron),
-                    name="聚影自动签到"
-                )
-                logger.info(f"聚影签到服务已启动，Cron：{self._cron}")
-            except Exception as e:
-                logger.error(f"聚影签到 Cron 表达式错误：{self._cron}，错误：{e}")
-
-        if self._scheduler.get_jobs():
-            self._scheduler.start()
-
     def checkin(self):
         """
-        执行签到
+        执行签到入口，带锁防止重复触发
+        """
+        if not self._checkin_lock.acquire(blocking=False):
+            logger.info("聚影签到正在执行中，跳过本次重复触发")
+            return
+
+        try:
+            self.__do_checkin()
+        finally:
+            self._checkin_lock.release()
+
+    def __do_checkin(self):
+        """
+        实际执行签到
         """
         if not self._cookie and (not self._username or not self._password):
             msg = "聚影签到失败：未配置 Cookie 或用户名/密码"
@@ -177,7 +183,11 @@ class HuamucangCheckIn(_PluginBase):
             logger.debug(f"已设置X-CSRFToken: {csrf_token[:20]}...")
 
         logger.debug(f"当前会话Cookie: {list(session.cookies.keys())}")
-        logger.debug(f"请求头包含认证信息: X-App-User-Token={bool(headers.get('X-App-User-Token'))}, X-CSRFToken={bool(headers.get('X-CSRFToken'))}")
+        logger.debug(
+            f"请求头包含认证信息: "
+            f"X-App-User-Token={bool(headers.get('X-App-User-Token'))}, "
+            f"X-CSRFToken={bool(headers.get('X-CSRFToken'))}"
+        )
 
         try:
             logger.debug(f"开始发送签到请求到: {self._checkin_url}")
@@ -199,7 +209,7 @@ class HuamucangCheckIn(_PluginBase):
             logger.debug(f"响应头: {dict(response.headers)}")
             logger.debug(f"响应内容: {text[:500]}...")
 
-            # 如果401未登录且配置了用户名密码，尝试登录重试
+            # 如果 401 未登录且配置了用户名密码，尝试登录重试
             if status_code == 401 and self._username and self._password:
                 logger.info("检测到401未登录，尝试用户名密码登录重试")
                 login_success, login_token = self.__login(session, headers.copy())
@@ -207,13 +217,12 @@ class HuamucangCheckIn(_PluginBase):
                     if login_token:
                         headers["X-App-User-Token"] = login_token
                         logger.debug(f"重试时设置X-App-User-Token: {login_token[:20]}...")
-                    
-                    # 更新CSRF令牌
+
                     csrf_token = self.__get_csrf_token(session)
                     if csrf_token:
                         headers["X-CSRFToken"] = csrf_token
                         logger.debug(f"重试时更新X-CSRFToken: {csrf_token[:20]}...")
-                    
+
                     logger.debug("重新发送签到请求")
                     try:
                         response = session.post(
@@ -425,8 +434,6 @@ class HuamucangCheckIn(_PluginBase):
             if keyword.lower() in lower_text:
                 return f"聚影签到可能失败：{clean_text[:300]}" if clean_text else "聚影签到可能失败：页面提示需要登录或权限不足"
 
-        # 当前你日志里的情况基本会进入这里：
-        # 状态码 200，返回正常首页标题，但没有明确签到结果。
         if "聚影" in clean_text and "网盘资源收集者" in clean_text:
             return "聚影签到请求成功，但页面未返回明确签到结果。请到网站个人中心确认是否签到成功。"
 
@@ -481,7 +488,6 @@ class HuamucangCheckIn(_PluginBase):
         try:
             return session.cookies.get("csrftoken") or session.cookies.get("csrfToken")
         except Exception:
-            # 如果有多个同名cookie，尝试从cookie jar中获取最新的
             try:
                 for cookie in session.cookies:
                     if cookie.name.lower() in ["csrftoken", "csrftoken"]:
@@ -512,10 +518,15 @@ class HuamucangCheckIn(_PluginBase):
             "签到完成",
             "今日已签到",
             "今天已签到",
+            "已经签到",
+            "签到过",
+            "请求成功",
+            "页面未返回明确签到结果",
             "already",
-            "success"
+            "success",
+            "checked"
         ]
-        return any(keyword in result for keyword in success_keywords)
+        return any(keyword.lower() in result for keyword in success_keywords)
 
     def __format_latest_result(self, text: str) -> str:
         """
@@ -529,7 +540,8 @@ class HuamucangCheckIn(_PluginBase):
             "聚影签到失败：",
             "聚影签到返回：",
             "聚影签到可能失败：",
-            "聚影签到请求成功："
+            "聚影签到请求成功：",
+            "聚影签到成功："
         ]
         for prefix in prefixes:
             if text.startswith(prefix):
@@ -755,6 +767,10 @@ class HuamucangCheckIn(_PluginBase):
     def get_service(self) -> List[Dict[str, Any]]:
         """
         服务信息
+
+        注意：
+        这里交给 MoviePilot 统一注册定时任务。
+        插件内部不再启动 BackgroundScheduler，避免重复执行。
         """
         if self._enabled and self._cron:
             try:
@@ -763,7 +779,7 @@ class HuamucangCheckIn(_PluginBase):
                 trigger = self._cron
 
             return [{
-                "id": "HuamucangCheckIn",
+                "id": "HuamucangCheckInService",
                 "name": "聚影自动签到",
                 "trigger": trigger,
                 "func": self.checkin,
@@ -1111,12 +1127,8 @@ class HuamucangCheckIn(_PluginBase):
     def stop_service(self):
         """
         停止插件服务
+
+        当前插件不再使用内部 BackgroundScheduler，
+        定时任务统一交给 MoviePilot 的 get_service 管理。
         """
-        try:
-            if self._scheduler:
-                self._scheduler.remove_all_jobs()
-                if self._scheduler.running:
-                    self._scheduler.shutdown()
-                self._scheduler = None
-        except Exception as e:
-            logger.error(f"聚影签到服务停止失败：{e}")
+        self._scheduler = None
