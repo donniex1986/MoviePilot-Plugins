@@ -29,13 +29,13 @@ class HuamucangCheckIn(_PluginBase):
     plugin_icon = "https://raw.githubusercontent.com/donniex1986/MoviePilot-Plugins/main/plugins.v2/huamucangcheckin/icons/taosync-2.png"
 
     # 插件版本
-    plugin_version = "1.0.14"
+    plugin_version = "1.0.15"
 
     # 插件作者
     plugin_author = "Donniex"
 
     # 作者主页
-    author_url = "https://share.huamucang.top"
+    author_url = "https://www.jying.top"
 
     # 插件配置前缀
     plugin_config_prefix = "huamucangcheckin_"
@@ -58,8 +58,8 @@ class HuamucangCheckIn(_PluginBase):
     _checkin_history: List[Dict[str, Any]] = []
 
     # 站点地址
-    _base_url = "https://share.huamucang.top"
-    _checkin_url = "https://share.huamucang.top/api/app/checkin/do/"
+    _base_url = "https://www.jying.top"
+    _checkin_url = "https://www.jying.top/api/app/checkin/do/"
 
     # 不再使用插件内部 BackgroundScheduler，统一交给 MoviePilot get_service 调度
     _scheduler = None
@@ -907,7 +907,7 @@ class HuamucangCheckIn(_PluginBase):
                                         "props": {
                                             "model": "username",
                                             "label": "用户名",
-                                            "placeholder": "请输入 share.huamucang.top 登录用户名"
+                                            "placeholder": "请输入 www.jying.top 登录用户名"
                                         }
                                     }
                                 ]
@@ -925,7 +925,7 @@ class HuamucangCheckIn(_PluginBase):
                                             "model": "password",
                                             "label": "密码",
                                             "type": "password",
-                                            "placeholder": "请输入 share.huamucang.top 登录密码"
+                                            "placeholder": "请输入 www.jying.top 登录密码"
                                         }
                                     }
                                 ]
@@ -980,7 +980,7 @@ class HuamucangCheckIn(_PluginBase):
                         "props": {
                             "type": "info",
                             "variant": "tonal",
-                            "text": "推荐填写用户名和密码进行登录；也可填写已登录 Cookie 作为备用。签到地址为 https://share.huamucang.top/checkin。"
+                            "text": "推荐填写用户名和密码进行登录；也可填写已登录 Cookie 作为备用。签到地址为 https://www.jying.top/checkin。"
                         }
                     }
                 ]

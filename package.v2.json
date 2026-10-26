@@ -3,11 +3,12 @@
     "name": "聚影签到",
     "description": "用于聚影网站每日自动签到，请在插件配置中填写用户名和密码或备用 Cookie。",
     "labels": "签到,网站",
-    "version": "1.0.14",
+    "version": "1.0.15",
     "icon": "https://raw.githubusercontent.com/donniex1986/MoviePilot-Plugins/main/plugins.v2/huamucangcheckin/icons/taosync-2.png",
     "author": "Donniex",
     "level": 1,
     "history": {
+      "v1.0.15": "更新聚影站点访问域名为 www.jying.top",
       "v1.0.14": "修复签到结果重复出现问题，移除插件内部 BackgroundScheduler，统一交由 MoviePilot 调度，并增加执行锁防止并发重复签到",
       "v1.0.13": "同步插件描述与版本信息，并精简日志输出",
       "v1.0.12": "优化页面显示，去掉最新结果前缀并同步插件描述与版本信息",
