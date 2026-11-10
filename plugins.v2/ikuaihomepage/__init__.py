@@ -20,7 +20,7 @@ class IKuaiHomePage(_PluginBase):
     plugin_name = "iKuai HomePage"
     plugin_desc = "将爱快本地路由监控数据转换为 Homepage customapi 接口。"
     plugin_icon = "https://raw.githubusercontent.com/thsrite/MoviePilot-Plugins/main/icons/homepage.png"
-    plugin_version = "1.6"
+    plugin_version = "1.7"
     plugin_author = "Donniex，qqcomeup"
     author_url = "https://github.com/ikuaidev/ikuai-cli"
     plugin_config_prefix = "ikuaihomepage_"
@@ -873,6 +873,16 @@ class IKuaiHomePage(_PluginBase):
         system_payload = self._build_system(system_raw, stale=stale)
         traffic_payload = self._build_interfaces([], traffic_raw, stale=stale)
         users_payload = self._build_users(users_raw, stale=stale)
+        if not traffic_payload["up_speed_bps"] or not traffic_payload["down_speed_bps"]:
+            system_data = self._as_dict(system_raw)
+            system_upload = self._to_int(self._pick(system_data, "upload", "upload_speed", "up_speed", default=0))
+            system_download = self._to_int(self._pick(system_data, "download", "download_speed", "down_speed", default=0))
+            if not traffic_payload["up_speed_bps"] and system_upload:
+                traffic_payload["up_speed_bps"] = system_upload
+                traffic_payload["up_speed"] = self._format_speed(system_upload)
+            if not traffic_payload["down_speed_bps"] and system_download:
+                traffic_payload["down_speed_bps"] = system_download
+                traffic_payload["down_speed"] = self._format_speed(system_download)
         return {
             "status": "ok",
             "router_name": system_payload.get("router_name", "iKuai"),

@@ -3,11 +3,12 @@
     "name": "iKuai HomePage",
     "description": "将爱快本地路由监控数据转换为 Homepage customapi 接口。",
     "labels": "工具,网络,监控,Homepage",
-    "version": "1.6",
+    "version": "1.7",
     "icon": "https://raw.githubusercontent.com/thsrite/MoviePilot-Plugins/main/icons/homepage.png",
     "author": "Donniex，qqcomeup",
     "level": 1,
     "history": {
+      "v1.7": "接口流量为零时，改用系统监控返回的总上传和下载速率",
       "v1.6": "修复个人 API Token 模式下的系统与流量字段解析，并兼容流量接口不可用时读取总流量",
       "v1.5": "支持使用爱快个人 API Token 访问本地 API"
     }
