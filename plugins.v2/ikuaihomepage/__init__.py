@@ -20,7 +20,7 @@ class IKuaiHomePage(_PluginBase):
     plugin_name = "iKuai HomePage"
     plugin_desc = "将爱快本地路由监控数据转换为 Homepage customapi 接口。"
     plugin_icon = "https://raw.githubusercontent.com/thsrite/MoviePilot-Plugins/main/icons/homepage.png"
-    plugin_version = "1.5"
+    plugin_version = "1.6"
     plugin_author = "Donniex，qqcomeup"
     author_url = "https://github.com/ikuaidev/ikuai-cli"
     plugin_config_prefix = "ikuaihomepage_"
@@ -489,21 +489,97 @@ class IKuaiHomePage(_PluginBase):
             raise ValueError(f"HTTP {response.status_code}: 非 JSON 响应") from err
 
         code = envelope.get("code", 0)
-        if response.status_code >= 400 or code not in (0, 20000):
-            message = envelope.get("message") or envelope.get("msg") or response.text
+        message = envelope.get("message") or envelope.get("msg") or response.text
+        if (
+            response.status_code >= 400
+            or code not in (0, 20000)
+            or envelope.get("success") is False
+        ):
             raise RuntimeError(f"HTTP {response.status_code} code={code}: {message}")
 
-        if "data" in envelope and envelope.get("data") is not None:
-            return envelope.get("data")
         if "results" in envelope and envelope.get("results") is not None:
             return envelope.get("results")
+        if "data" in envelope and envelope.get("data") is not None:
+            return envelope.get("data")
         return envelope
 
     def _request_router(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """按当前认证方式请求爱快路由器。"""
         if self._auth_mode == "token":
-            return self._request_local_api(path, params=params)
+            api_path = "/" + str(path or "").lstrip("/")
+            if api_path == "/monitoring/system":
+                return self._normalize_local_system(self._request_local_api(api_path, params=params))
+            if api_path == "/monitoring/interfaces-status":
+                return self._normalize_local_interfaces_status(self._request_local_api(api_path, params=params))
+            if api_path == "/monitoring/interfaces-traffic":
+                try:
+                    return self._normalize_local_traffic(self._request_local_api(api_path, params=params))
+                except RuntimeError as err:
+                    if "not found" not in str(err).lower() and "404" not in str(err):
+                        raise
+                    system_raw = self._request_local_api("/monitoring/system")
+                    system_data = self._as_dict(self._as_dict(system_raw).get("sysinfo"))
+                    stream = self._as_dict(system_data.get("stream"))
+                    if not stream:
+                        raise
+                    return [
+                        {
+                            "name": "aggregate",
+                            "upload": stream.get("upload", 0),
+                            "download": stream.get("download", 0),
+                        }
+                    ]
+            return self._request_local_api(api_path, params=params)
         return self._request_web_api(path, params=params)
+
+    def _normalize_local_interfaces_status(self, raw: Any) -> List[Dict[str, Any]]:
+        """将 Token API 的接口状态响应转换为接口列表。"""
+        data = self._as_dict(raw)
+        if "snapshoot_wan" in data or "snapshoot_lan" in data:
+            return self._normalize_web_interfaces_status(data)
+
+        rows = data.get("iface_check") or data.get("interfaces") or self._as_list(raw)
+        items = []
+        for item in self._as_list(rows):
+            row = self._as_dict(item).copy()
+            name = row.get("interface") or row.get("name")
+            row["name"] = name
+            row["ip"] = row.get("ip") or row.get("ip_addr")
+            row["type"] = row.get("type") or ("wan" if str(name or "").lower().startswith("wan") else "")
+            row["status"] = row.get("status") or ("up" if row.get("result") == "success" else "-")
+            items.append(row)
+        return items
+
+    def _normalize_local_traffic(self, raw: Any) -> List[Any]:
+        """提取 Token API 接口流量列表。"""
+        data = self._as_dict(raw)
+        for key in ("iface_stream", "interfaces", "traffic", "items", "list"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        return self._as_list(raw)
+
+    def _normalize_local_system(self, raw: Any) -> Dict[str, Any]:
+        """将 Token API 的 results.sysinfo 转换为 Homepage 使用的系统字段。"""
+        result = self._as_dict(raw)
+        data = self._as_dict(result.get("sysinfo")) or result
+        memory = self._as_dict(data.get("memory"))
+        online_user = self._as_dict(data.get("online_user"))
+        stream = self._as_dict(data.get("stream"))
+        verinfo = self._as_dict(data.get("verinfo"))
+        cpu_values = self._as_list(data.get("cpu"))
+        cpu = cpu_values[-1] if cpu_values else data.get("cpu_usage", 0)
+        return {
+            "name": data.get("hostname") or "iKuai",
+            "hostname": data.get("hostname") or "iKuai",
+            "cpu": cpu,
+            "memory": memory.get("used", data.get("mem_usage", 0)),
+            "uptime": data.get("uptime", 0),
+            "version": verinfo.get("verstring") or data.get("version"),
+            "wan_ip": data.get("wan_ip") or data.get("ip_addr"),
+            "online_users": online_user.get("count"),
+            "upload": stream.get("upload", 0),
+            "download": stream.get("download", 0),
+        }
 
     def _request_web_api(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """通过爱快后台会话接口读取监控数据。"""
