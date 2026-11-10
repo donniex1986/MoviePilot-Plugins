@@ -1,4 +1,16 @@
 {
+  "IKuaiHomePage": {
+    "name": "iKuai HomePage",
+    "description": "将爱快本地路由监控数据转换为 Homepage customapi 接口。",
+    "labels": "工具,网络,监控,Homepage",
+    "version": "1.5",
+    "icon": "https://raw.githubusercontent.com/thsrite/MoviePilot-Plugins/main/icons/homepage.png",
+    "author": "Donniex，qqcomeup",
+    "level": 1,
+    "history": {
+      "v1.5": "支持使用爱快个人 API Token 访问本地 API"
+    }
+  },
   "HuamucangCheckIn": {
     "name": "聚影签到",
     "description": "用于聚影网站每日自动签到，请在插件配置中填写用户名和密码或备用 Cookie。",
