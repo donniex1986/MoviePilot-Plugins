@@ -3,11 +3,12 @@
     "name": "飞牛 fnOS HomePage",
     "description": "将飞牛 fnOS 系统、网络和存储状态转换为 Homepage customapi 接口。",
     "labels": "工具,NAS,监控,Homepage",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "icon": "https://raw.githubusercontent.com/thsrite/MoviePilot-Plugins/main/icons/homepage.png",
     "author": "Donniex",
     "level": 1,
     "history": {
+      "v1.0.4": "Homepage 存储与网络速度显示改用 GiB、MiB/s，保留 API 原始字节字段",
       "v1.0.3": "修复 fnOS 内存监控响应中 mem 字段解析错误",
       "v1.0.2": "修复 fnOS WebSocket 连接自动使用代理导致局域网 NAS 地址解析失败",
       "v1.0.1": "修复登录失败原因显示，并在 Homepage 卡片中展示 fnOS 连接状态",

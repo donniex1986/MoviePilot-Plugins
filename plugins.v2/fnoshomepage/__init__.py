@@ -61,7 +61,7 @@ class FNOSHomePage(_PluginBase):
     plugin_name = "飞牛 fnOS HomePage"
     plugin_desc = "将飞牛 fnOS 系统、网络和存储状态转换为 Homepage customapi 接口。"
     plugin_icon = "https://raw.githubusercontent.com/thsrite/MoviePilot-Plugins/main/icons/homepage.png"
-    plugin_version = "1.0.3"
+    plugin_version = "1.0.4"
     plugin_author = "Donniex"
     author_url = "https://github.com/donniex1986/MoviePilot-Plugins"
     plugin_config_prefix = "fnoshomepage_"
@@ -528,9 +528,13 @@ class FNOSHomePage(_PluginBase):
             "memory_percent": memory_percent,
             "upload_bytes_per_sec": network_upload,
             "download_bytes_per_sec": network_download,
+            "upload_mib_per_sec": round(network_upload / (1024 ** 2), 2),
+            "download_mib_per_sec": round(network_download / (1024 ** 2), 2),
             "network_interfaces": normalized_interfaces,
             "storage_used_bytes": storage_used,
             "storage_total_bytes": storage_total,
+            "storage_used_gib": round(storage_used / (1024 ** 3), 2),
+            "storage_total_gib": round(storage_total / (1024 ** 3), 2),
             "storage_percent": round(storage_used / storage_total * 100, 2) if storage_total > 0 else 0,
             "volume_count": len(normalized_volumes),
             "volumes": normalized_volumes,
@@ -646,11 +650,11 @@ class FNOSHomePage(_PluginBase):
             label: 连接状态
           - field: storage_percent
             label: 存储使用率 %
-          - field: storage_used_bytes
-            label: 已用字节
-          - field: storage_total_bytes
-            label: 总容量字节
-          - field: download_bytes_per_sec
-            label: 下载字节/秒
-          - field: upload_bytes_per_sec
-            label: 上传字节/秒"""
+          - field: storage_used_gib
+            label: 已用容量 GiB
+          - field: storage_total_gib
+            label: 总容量 GiB
+          - field: download_mib_per_sec
+            label: 下载速度 MiB/s
+          - field: upload_mib_per_sec
+            label: 上传速度 MiB/s"""
