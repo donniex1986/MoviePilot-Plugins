@@ -1,11 +1,13 @@
 import asyncio
 import copy
 import math
+import ssl
 import threading
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+import websockets
 from fnos import FnosClient, ResourceMonitor, Store, SystemInfo
 
 from app import schemas
@@ -14,13 +16,52 @@ from app.log import logger
 from app.plugins import _PluginBase
 
 
+class _DirectFnosClient(FnosClient):
+    """连接 fnOS 时绕过 websockets 的自动代理发现。"""
+
+    async def connect(
+        self,
+        endpoint: str,
+        timeout: float = 3.0,
+        use_ssl: bool = False,
+        skip_ssl_verify: bool = True,
+    ) -> bool:
+        parsed_endpoint, actual_use_ssl = self._parse_endpoint(endpoint, use_ssl)
+        self.endpoint = parsed_endpoint
+        self.use_ssl = actual_use_ssl
+        self.skip_ssl_verify = skip_ssl_verify
+
+        protocol = "wss" if actual_use_ssl else "ws"
+        uri = f"{protocol}://{parsed_endpoint}/websocket?type={self.type}"
+        ssl_context = None
+        if actual_use_ssl:
+            ssl_context = ssl.create_default_context()
+            if skip_ssl_verify:
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
+        try:
+            self.ws = await websockets.connect(uri, ssl=ssl_context, proxy=None)
+            self.message_task = asyncio.create_task(self._message_handler())
+            self.connect_future = asyncio.get_running_loop().create_future()
+            await self._send_first_request()
+            await asyncio.wait_for(self.connect_future, timeout=timeout)
+            return True
+        except asyncio.TimeoutError as err:
+            self.connected = False
+            raise RuntimeError("连接超时") from err
+        except Exception:
+            self.connected = False
+            raise
+
+
 class FNOSHomePage(_PluginBase):
     """飞牛 fnOS HomePage 自定义 API 插件。"""
 
     plugin_name = "飞牛 fnOS HomePage"
     plugin_desc = "将飞牛 fnOS 系统、网络和存储状态转换为 Homepage customapi 接口。"
     plugin_icon = "https://raw.githubusercontent.com/thsrite/MoviePilot-Plugins/main/icons/homepage.png"
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     plugin_author = "Donniex"
     author_url = "https://github.com/donniex1986/MoviePilot-Plugins"
     plugin_config_prefix = "fnoshomepage_"
@@ -347,7 +388,7 @@ class FNOSHomePage(_PluginBase):
 
     async def _fetch_snapshot(self) -> Dict[str, Any]:
         """登录 fnOS 并读取系统、网络与存储数据。"""
-        client = FnosClient()
+        client = _DirectFnosClient()
         try:
             await client.connect(
                 self._endpoint,
