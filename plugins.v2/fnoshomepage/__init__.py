@@ -61,7 +61,7 @@ class FNOSHomePage(_PluginBase):
     plugin_name = "飞牛 fnOS HomePage"
     plugin_desc = "将飞牛 fnOS 系统、网络和存储状态转换为 Homepage customapi 接口。"
     plugin_icon = "https://raw.githubusercontent.com/thsrite/MoviePilot-Plugins/main/icons/homepage.png"
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
     plugin_author = "Donniex"
     author_url = "https://github.com/donniex1986/MoviePilot-Plugins"
     plugin_config_prefix = "fnoshomepage_"
@@ -446,8 +446,11 @@ class FNOSHomePage(_PluginBase):
         cpu_busy = cpu.get("busy", {}) if isinstance(cpu, dict) else {}
         cpu_percent = cls._required_number(cpu_busy.get("all"), "CPU 使用率")
 
-        memory = memory_data.get("memory", {})
-        memory = memory.get("mem", {}) if isinstance(memory, dict) else {}
+        memory = memory_data.get("mem", memory_data.get("memory", {}))
+        if isinstance(memory, dict) and isinstance(memory.get("mem"), dict):
+            memory = memory["mem"]
+        if not isinstance(memory, dict):
+            memory = {}
         memory_total = cls._required_number(memory.get("total"), "内存总量")
         memory_used_value = memory.get("used")
         if memory_used_value is None and memory.get("free") is not None:
