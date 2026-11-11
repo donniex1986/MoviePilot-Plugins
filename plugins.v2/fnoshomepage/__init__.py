@@ -20,7 +20,7 @@ class FNOSHomePage(_PluginBase):
     plugin_name = "飞牛 fnOS HomePage"
     plugin_desc = "将飞牛 fnOS 系统、网络和存储状态转换为 Homepage customapi 接口。"
     plugin_icon = "https://raw.githubusercontent.com/thsrite/MoviePilot-Plugins/main/icons/homepage.png"
-    plugin_version = "1.0"
+    plugin_version = "1.0.1"
     plugin_author = "Donniex"
     author_url = "https://github.com/donniex1986/MoviePilot-Plugins"
     plugin_config_prefix = "fnoshomepage_"
