@@ -341,6 +341,7 @@ class FNOSHomePage(_PluginBase):
                 snapshot = copy.deepcopy(self._snapshot)
                 snapshot["stale"] = True
                 snapshot["error"] = str(err)
+                snapshot["message"] = f"fnOS 请求失败: {err}"
                 return snapshot
             raise
 
@@ -358,7 +359,12 @@ class FNOSHomePage(_PluginBase):
             if login.get("twofaRequired") or login.get("twofaSetupRequired"):
                 raise RuntimeError("fnOS 账号要求二次验证；当前插件版本暂不支持该登录方式")
             if login.get("result") != "succ":
-                reason = login.get("message") or login.get("msg") or "用户名或密码无效"
+                reason = (
+                    login.get("message")
+                    or login.get("msg")
+                    or login.get("errmsg")
+                    or "fnOS 未提供登录失败原因"
+                )
                 raise RuntimeError(f"fnOS 登录失败: {reason}")
 
             info = SystemInfo(client)
@@ -469,6 +475,7 @@ class FNOSHomePage(_PluginBase):
 
         return {
             "status": "online",
+            "message": "fnOS 连接正常",
             "hostname": str(hostname or ""),
             "uptime_seconds": uptime_seconds,
             "cpu_percent": cpu_percent,
@@ -577,6 +584,8 @@ class FNOSHomePage(_PluginBase):
         url: http://moviepilot:3001{api_base}/summary?apikey={{{{HOMEPAGE_VAR_MP_APIKEY}}}}
         refreshInterval: 10000
         mappings:
+          - field: message
+            label: 连接状态
           - field: hostname
             label: NAS
           - field: cpu_percent
@@ -589,6 +598,8 @@ class FNOSHomePage(_PluginBase):
         url: http://moviepilot:3001{api_base}/summary?apikey={{{{HOMEPAGE_VAR_MP_APIKEY}}}}
         refreshInterval: 10000
         mappings:
+          - field: message
+            label: 连接状态
           - field: storage_percent
             label: 存储使用率 %
           - field: storage_used_bytes
